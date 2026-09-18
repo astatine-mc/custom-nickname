@@ -1,0 +1,1 @@
+{"id":"customnickname","name":"CustomNickname","version":"2.0.0","authors":["Seremc"],"dependencies":[{"id":"tab","optional":true}],"main":"kr.seremc.nickname.velocity.VelocityNicknamePlugin"}

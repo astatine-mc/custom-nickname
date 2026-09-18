@@ -1,0 +1,7 @@
+name: CustomNicknameBridge
+version: '2.0.0'
+main: kr.seremc.nickname.paper.PaperNicknameBridge
+api-version: '1.21.4'
+authors: [Seremc]
+softdepend: [CustomNameplates]
+description: Velocity CustomNickname의 아이템 및 표시 브리지
