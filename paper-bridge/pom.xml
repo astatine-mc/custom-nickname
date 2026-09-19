@@ -6,5 +6,18 @@
     <dependency><groupId>kr.seremc</groupId><artifactId>custom-nickname-core</artifactId><version>${project.version}</version><exclusions><exclusion><groupId>com.zaxxer</groupId><artifactId>HikariCP</artifactId></exclusion><exclusion><groupId>org.mariadb.jdbc</groupId><artifactId>mariadb-java-client</artifactId></exclusion></exclusions></dependency>
     <dependency><groupId>io.papermc.paper</groupId><artifactId>paper-api</artifactId><version>1.21.4-R0.1-SNAPSHOT</version><scope>provided</scope></dependency>
   </dependencies>
-  <build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId><executions><execution><phase>package</phase><goals><goal>shade</goal></goals><configuration><createDependencyReducedPom>false</createDependencyReducedPom><artifactSet><includes><include>kr.seremc:custom-nickname-core</include></includes></artifactSet></configuration></execution></executions></plugin></plugins></build>
+  <build><plugins>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId><executions><execution><phase>package</phase><goals><goal>shade</goal></goals><configuration><createDependencyReducedPom>false</createDependencyReducedPom><artifactSet><includes><include>kr.seremc:custom-nickname-core</include></includes></artifactSet></configuration></execution></executions></plugin>
+    <plugin>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-antrun-plugin</artifactId>
+      <version>3.1.0</version>
+      <executions><execution><id>copy-paper-bridge-to-lobby</id><phase>package</phase><goals><goal>run</goal></goals><configuration>
+        <target>
+          <mkdir dir="${project.basedir}/../../lobby/plugins"/>
+          <copy file="${project.build.directory}/${project.build.finalName}.jar" todir="${project.basedir}/../../lobby/plugins" overwrite="true"/>
+        </target>
+      </configuration></execution></executions>
+    </plugin>
+  </plugins></build>
 </project>

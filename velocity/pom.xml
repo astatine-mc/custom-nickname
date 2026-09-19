@@ -17,5 +17,16 @@
       <filters><filter><artifact>*:*</artifact><excludes><exclude>META-INF/*.SF</exclude><exclude>META-INF/*.RSA</exclude><exclude>META-INF/*.DSA</exclude></excludes></filter></filters>
       <transformers><transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/></transformers>
     </configuration></execution></executions></plugin>
+    <plugin>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-antrun-plugin</artifactId>
+      <version>3.1.0</version>
+      <executions><execution><id>copy-velocity-plugin-to-proxy</id><phase>package</phase><goals><goal>run</goal></goals><configuration>
+        <target>
+          <mkdir dir="${project.basedir}/../../Proxy/plugins"/>
+          <copy file="${project.build.directory}/${project.build.finalName}.jar" todir="${project.basedir}/../../Proxy/plugins" overwrite="true"/>
+        </target>
+      </configuration></execution></executions>
+    </plugin>
   </plugins></build>
 </project>

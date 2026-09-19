@@ -10,6 +10,7 @@ mvn clean package
 
 - `velocity/target/custom-nickname-velocity-2.0.0-SNAPSHOT.jar`: Velocity `plugins`에 설치
 - `paper-bridge/target/custom-nickname-paper-bridge-2.0.0-SNAPSHOT.jar`: 모든 Paper/Purpur 서버의 `plugins`에 설치
+- `mvn package`를 실행하면 위 JAR가 작업 공간 루트의 `Proxy/plugins`와 `lobby/plugins`에도 각각 자동 복사됩니다.
 - Velocity에는 TAB 6.x, Paper에는 CustomNameplates 3.x를 설치합니다. 두 연동 플러그인은 선택 의존성입니다.
 - 모든 백엔드는 프록시가 전달한 동일한 UUID를 사용해야 합니다.
 
