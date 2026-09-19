@@ -15,6 +15,7 @@ import kr.seremc.nickname.protocol.NicknameProtocol;
 import kr.seremc.nickname.protocol.NicknameProtocol.Packet;
 import kr.seremc.nickname.service.*;
 import kr.seremc.nickname.storage.MariaRepository;
+import kr.seremc.nickname.storage.error.DatabaseAuthenticationException;
 import net.kyori.adventure.text.Component;
 import org.slf4j.Logger;
 
@@ -23,6 +24,10 @@ import java.util.*;
 import java.util.concurrent.*;
 
 @Plugin(id="customnickname",name="CustomNickname",version="2.0.0",authors={"Seremc"},dependencies={@Dependency(id="tab",optional=true)})
+/**
+ * 네트워크 전체의 닉네임 원본 서비스입니다.
+ * MariaDB와 변경권 판정은 이 Velocity 모듈에서만 수행하고 Paper에는 결과만 전파합니다.
+ */
 public final class VelocityNicknamePlugin {
  static final MinecraftChannelIdentifier CHANNEL=MinecraftChannelIdentifier.from(NicknameProtocol.CHANNEL);
  private final ProxyServer proxy; private final Logger logger; private final Path dataDirectory;
@@ -33,7 +38,9 @@ public final class VelocityNicknamePlugin {
  @Subscribe public void onInitialize(ProxyInitializeEvent event){
   try{
    VelocityConfig config=VelocityConfig.load(dataDirectory);
-   HikariConfig hikari=new HikariConfig();hikari.setJdbcUrl(config.get("database.url"));hikari.setUsername(config.get("database.username"));hikari.setPassword(config.secret("database.password-env","database.password"));hikari.setDriverClassName("org.mariadb.jdbc.Driver");hikari.setMaximumPoolSize(Math.max(2,config.integer("database.pool-size",6)));hikari.setConnectionTimeout(3000);hikari.setPoolName("CustomNicknameVelocity");
+   String databasePassword=config.secret("database.password-env","database.password");
+   if(databasePassword.isBlank())throw new DatabaseAuthenticationException("Velocity 시작 시 DB 연결","",0,null);
+   HikariConfig hikari=new HikariConfig();hikari.setJdbcUrl(config.get("database.url"));hikari.setUsername(config.get("database.username"));hikari.setPassword(databasePassword);hikari.setDriverClassName("org.mariadb.jdbc.Driver");hikari.setMaximumPoolSize(Math.max(2,config.integer("database.pool-size",6)));hikari.setConnectionTimeout(3000);hikari.setPoolName("CustomNicknameVelocity");
    MariaRepository repository=new MariaRepository(new HikariDataSource(hikari));repository.initialize();
    names=new DefaultNicknameService(repository,new NamePolicy(config.integer("nickname.min-length",2),config.integer("nickname.max-length",16),config.list("nickname.blocked")),this::profileChanged);
    proxy.getChannelRegistrar().register(CHANNEL);

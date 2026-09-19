@@ -16,6 +16,10 @@ import org.jetbrains.annotations.NotNull;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Velocity가 확정한 프로필을 Paper 화면과 인벤토리에 적용하는 브리지입니다.
+ * 이 모듈은 MariaDB에 연결하지 않으며, 모든 신뢰 판단은 Velocity의 응답을 기준으로 합니다.
+ */
 public final class PaperNicknameBridge extends JavaPlugin implements Listener, PluginMessageListener {
     private final Map<UUID, NicknameProfile> profiles = new ConcurrentHashMap<>();
     private TicketItems tickets;
@@ -43,6 +47,7 @@ public final class PaperNicknameBridge extends JavaPlugin implements Listener, P
         Bukkit.getScheduler().runTaskLater(this, () -> requestState(event.getPlayer()), 1L);
     }
 
+    /** 접속·서버 이동 직후 프로필과 보유 변경권 상태를 Velocity에 다시 요청합니다. */
     private void requestState(Player player) {
         if (!player.isOnline()) return;
         UUID request = UUID.randomUUID();
@@ -74,6 +79,7 @@ public final class PaperNicknameBridge extends JavaPlugin implements Listener, P
         } catch (IllegalArgumentException e) { player.sendMessage(Component.text("[닉네임] 잘못된 요청입니다: " + e.getMessage())); }
     }
 
+    /** revision이 낮은 지연 packet은 무시해 서버 이동 중 이전 닉네임으로 되돌아가지 않게 합니다. */
     private void applyProfile(Player player, Packet packet) {
         NicknameProfile next = new NicknameProfile(player.getUniqueId(), packet.field(0), packet.field(1), Boolean.parseBoolean(packet.field(2)), Long.parseLong(packet.field(3)));
         NicknameProfile applied = profiles.compute(player.getUniqueId(), (id, old) -> old == null || next.revision() >= old.revision() ? next : old);
@@ -83,6 +89,7 @@ public final class PaperNicknameBridge extends JavaPlugin implements Listener, P
         getServer().getPluginManager().callEvent(new NicknameUpdatedEvent(next));
     }
 
+    /** Velocity가 방금 발급한 UUID를 PDC가 들어 있는 변경권 아이템으로 변환합니다. */
     private void createTicket(Player player, Packet packet) {
         UUID id = UUID.fromString(packet.field(0));
         Map<Integer, org.bukkit.inventory.ItemStack> overflow = player.getInventory().addItem(tickets.create(id));
@@ -97,6 +104,7 @@ public final class PaperNicknameBridge extends JavaPlugin implements Listener, P
         );
     }
 
+    /** 동일 UUID의 복제본까지 현재 인벤토리·off-hand·cursor에서 모두 제거합니다. */
     private void removeTicket(Player player, UUID id, boolean used) {
         int count = tickets.removeAll(player, id);
         if (count > 0 && !used) player.sendMessage(Component.text("[닉네임] 사용할 수 없는 변경권 " + count + "개를 제거했습니다."));

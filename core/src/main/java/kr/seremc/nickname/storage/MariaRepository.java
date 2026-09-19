@@ -3,18 +3,27 @@ package kr.seremc.nickname.storage;
 import com.zaxxer.hikari.HikariDataSource;
 import kr.seremc.nickname.api.*;
 import kr.seremc.nickname.service.NamePolicy;
+import kr.seremc.nickname.storage.error.DatabaseException;
+import kr.seremc.nickname.storage.sql.SqlErrorTranslator;
 
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.sql.*;
 import java.util.*;
 
+/**
+ * MariaDB의 영속 상태만 다루는 저장소입니다.
+ *
+ * <p>닉네임 규칙, Bukkit/Velocity API, plugin messaging은 이 클래스에 넣지 않습니다.
+ * 변경권 사용은 프로필 수정·이력·감사 로그와 같은 DB 트랜잭션으로 확정합니다.</p>
+ */
 public final class MariaRepository implements AutoCloseable {
     private final HikariDataSource pool;
 
     public MariaRepository(HikariDataSource pool) { this.pool = pool; }
 
-    public void initialize() throws SQLException {
+    /** 모든 네트워크 서버가 공유하는 UUID 중심 스키마를 한 번 준비합니다. */
+    public void initialize() {
         try (Connection c = pool.getConnection(); Statement s = c.createStatement()) {
             s.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS cn_players (
@@ -89,9 +98,12 @@ public final class MariaRepository implements AutoCloseable {
                   KEY ix_cn_audit_target(target_uuid,audit_id), KEY ix_cn_audit_request(request_id)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin
                 """);
+        } catch (SQLException error) {
+            throw SqlErrorTranslator.translate("닉네임 DB 스키마 초기화", error);
         }
     }
 
+    /** 허용된 인덱스 열로만 단일 프로필을 조회해 SQL 식별자 주입을 막습니다. */
     public Optional<NicknameProfile> find(String field, String value) throws SQLException {
         if (!Set.of("player_uuid", "nickname_key", "account_name_key").contains(field)) throw new IllegalArgumentException("Invalid lookup");
         try (Connection c = pool.getConnection(); PreparedStatement s = c.prepareStatement("SELECT * FROM cn_players WHERE " + field + "=? LIMIT 2")) {
@@ -105,6 +117,7 @@ public final class MariaRepository implements AutoCloseable {
         }
     }
 
+    /** 접속 계정명을 최신화하고, 커스텀 닉네임이 없는 경우 기본 닉네임도 함께 갱신합니다. */
     public NicknameProfile synchronize(UUID id, String accountName) throws SQLException {
         if (!accountName.matches("[A-Za-z0-9_]{1,16}")) throw new IllegalArgumentException("유효하지 않은 계정명입니다.");
         return transaction(c -> {
@@ -126,6 +139,7 @@ public final class MariaRepository implements AutoCloseable {
         });
     }
 
+    /** 변경권 사용, 닉네임 변경, 이력 기록을 하나의 원자적 작업으로 처리합니다. */
     public NicknameProfile changeWithTicket(UUID id, String nickname, UUID token, UUID requestId) throws SQLException {
         return transaction(c -> {
             Optional<NicknameProfile> replay = replay(c,id,requestId);
@@ -144,6 +158,7 @@ public final class MariaRepository implements AutoCloseable {
         });
     }
 
+    /** 관리자의 강제 변경도 일반 변경과 같은 이력·감사 규칙을 적용합니다. */
     public NicknameProfile forceChange(UUID id, String nickname, String actorType, String actorId, String reason, UUID requestId) throws SQLException {
         return transaction(c -> {
             Optional<NicknameProfile> replay = replay(c,id,requestId);
@@ -196,8 +211,9 @@ public final class MariaRepository implements AutoCloseable {
     private NicknameProfile profile(ResultSet r)throws SQLException{return new NicknameProfile(UUID.fromString(r.getString("player_uuid")),r.getString("current_account_name"),r.getString("current_nickname"),r.getBoolean("is_custom"),r.getLong("revision"));}
     private static byte[] hash(UUID token){try{MessageDigest digest=MessageDigest.getInstance("SHA-256");ByteBuffer b=ByteBuffer.allocate(16).putLong(token.getMostSignificantBits()).putLong(token.getLeastSignificantBits());return digest.digest(b.array());}catch(Exception e){throw new IllegalStateException(e);}}
     @FunctionalInterface private interface Work<T>{T run(Connection c)throws SQLException;}
+    /** 데드락과 잠금 대기는 최대 두 번 재시도하고, 그 밖의 SQL 오류는 분류된 도메인 예외로 바꿉니다. */
     private <T>T transaction(Work<T> work)throws SQLException{for(int attempt=0;;attempt++){try{return transactionOnce(work);}catch(SQLException e){if(attempt>=2||(e.getErrorCode()!=1213&&e.getErrorCode()!=1205))throw translate(e);}}}
     private <T>T transactionOnce(Work<T> work)throws SQLException{try(Connection c=pool.getConnection()){c.setAutoCommit(false);try{T result=work.run(c);c.commit();return result;}catch(SQLException|RuntimeException e){try{c.rollback();}catch(SQLException rollback){e.addSuppressed(rollback);}throw e;}}}
-    private SQLException translate(SQLException e){if(e.getErrorCode()==1062)throw new IllegalArgumentException("이미 사용 중인 닉네임 또는 요청입니다.",e);return e;}
+    private DatabaseException translate(SQLException error){return SqlErrorTranslator.translate("닉네임 트랜잭션",error);}
     @Override public void close(){pool.close();}
 }

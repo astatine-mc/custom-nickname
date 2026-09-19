@@ -7,6 +7,10 @@ import java.lang.reflect.*;
 import java.util.*;
 import java.util.function.Function;
 
+/**
+ * CustomNameplates가 선택적으로 설치된 경우에만 placeholder를 등록하는 어댑터입니다.
+ * 리플렉션을 사용해 브리지 JAR가 CustomNameplates API를 함께 포함하거나 강제 의존하지 않게 합니다.
+ */
 final class CustomNameplatesIntegration {
     private static final String PLACEHOLDER = "customnickname_nickname";
     private final PaperNicknameBridge bridge;
@@ -33,13 +37,16 @@ final class CustomNameplatesIntegration {
         }
     }
 
+    /** reload 뒤에도 마지막 캐시 값을 반환하는 placeholder를 다시 등록합니다. */
     private void register() {
         try {
             Class<?> api = Class.forName("net.momirealms.customnameplates.api.CustomNameplates");
             Object plugin = api.getMethod("getInstance").invoke(null);
             Object manager = api.getMethod("getPlaceholderManager").invoke(plugin);
             Class<?> managerType = Class.forName("net.momirealms.customnameplates.api.placeholder.PlaceholderManager");
-            managerType.getMethod("unregisterPlaceholder", String.class).invoke(manager, PLACEHOLDER);
+            // 등록된 placeholder가 있을 때만 제거한다. 없는 ID를 제거할 때 발생하던 CustomNameplates 내부 NPE를 피한다.
+            Object previous = managerType.getMethod("getRegisteredPlaceholder", String.class).invoke(manager, PLACEHOLDER);
+            if (previous != null) managerType.getMethod("unregisterPlaceholder", String.class).invoke(manager, PLACEHOLDER);
             Function<Object, String> value = player -> {
                 try {
                     UUID id = (UUID) player.getClass().getMethod("uuid").invoke(player);
@@ -54,7 +61,8 @@ final class CustomNameplatesIntegration {
             Bukkit.getOnlinePlayers().forEach(player -> refresh(player.getUniqueId()));
             bridge.getLogger().info("CustomNameplates placeholder를 등록했습니다: %" + PLACEHOLDER + "%");
         } catch (ReflectiveOperationException e) {
-            bridge.getLogger().warning("CustomNameplates placeholder 등록 실패: " + e.getMessage());
+            Throwable cause = e instanceof InvocationTargetException invocation && invocation.getCause() != null ? invocation.getCause() : e;
+            bridge.getLogger().log(java.util.logging.Level.WARNING, "CustomNameplates placeholder 등록 실패: " + cause, cause);
         }
     }
 

@@ -8,6 +8,10 @@ import org.slf4j.Logger;
 import java.util.*;
 import java.util.concurrent.*;
 
+/**
+ * 플레이어 조회·변경과 관리자 지급·강제 변경·이력 명령을 Velocity에서 한 번만 등록합니다.
+ * 명령 처리 결과는 비동기 서비스에서 오므로 Bukkit/Paper 객체를 이 클래스에 추가하지 않습니다.
+ */
 final class VelocityCommands implements SimpleCommand {
  private final VelocityNicknamePlugin plugin;private final ProxyServer proxy;private final NicknameService names;private final Logger logger;private boolean admin;
  VelocityCommands(VelocityNicknamePlugin plugin,ProxyServer proxy,NicknameService names,Logger logger){this.plugin=plugin;this.proxy=proxy;this.names=names;this.logger=logger;}
