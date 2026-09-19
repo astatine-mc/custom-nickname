@@ -98,7 +98,7 @@ public final class VelocityNicknamePlugin {
   }
 
   /**
-   * 접속 계정 동기화 완료까지 비동기 로그인 이벤트를 보류합니다. 동기화 실패 시 프로필이 불완전한 접속을 거절합니다. 현재 names가 null이면 동기화를 건너뜁니다.
+   * 접속 계정 동기화 완료까지 비동기 로그인 이벤트를 보류합니다. 시작 실패·종료 중·동기화 실패 시 접속을 거절합니다.
    */
   @Subscribe
   public EventTask onLogin(LoginEvent event) {

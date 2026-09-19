@@ -62,7 +62,7 @@ public final class DefaultNicknameService implements NicknameService, AutoClosea
   /** 더 낮은 revision의 비동기 결과가 최신 캐시를 덮어쓰지 않도록 보장합니다. */
   private NicknameProfile committed(NicknameProfile profile) {
     NicknameProfile latest = cache.accept(profile);
-    // 表示 콜백 실패는 이미 commit된 DB 변경을 실패로 바꾸지 않는다.
+    // 표시 콜백 실패는 이미 commit된 DB 변경을 실패로 바꾸지 않는다.
     try {
       changed.accept(latest);
     } catch (RuntimeException error) {
