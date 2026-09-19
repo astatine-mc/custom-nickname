@@ -16,7 +16,7 @@ public final class DefaultNicknameService implements NicknameService, AutoClosea
   private final MariaRepository repository;
   private final NamePolicy policy;
   private final Consumer<NicknameProfile> changed;
-  private final Map<UUID, NicknameProfile> cache = new ConcurrentHashMap<>();
+  private final ProfileCache cache = new ProfileCache();
   private final ExecutorService executor =
       new ThreadPoolExecutor(
           4,
@@ -61,17 +61,21 @@ public final class DefaultNicknameService implements NicknameService, AutoClosea
 
   /** 더 낮은 revision의 비동기 결과가 최신 캐시를 덮어쓰지 않도록 보장합니다. */
   private NicknameProfile committed(NicknameProfile profile) {
-    cache.compute(
-        profile.playerId(),
-        (id, old) -> old == null || old.revision() <= profile.revision() ? profile : old);
-    changed.accept(profile);
-    return profile;
+    NicknameProfile latest = cache.accept(profile);
+    // 表示 콜백 실패는 이미 commit된 DB 변경을 실패로 바꾸지 않는다.
+    try {
+      changed.accept(latest);
+    } catch (RuntimeException error) {
+      System.getLogger(DefaultNicknameService.class.getName()).log(
+          System.Logger.Level.ERROR, "DB 저장 후 표시 알림 실패", error);
+    }
+    return latest;
   }
 
   /** UUID 캐시가 있으면 즉시 반환하고 없으면 DB에서 읽어 캐시와 변경 알림에 반영합니다. */
   @Override
   public CompletableFuture<Optional<NicknameProfile>> findById(UUID id) {
-    NicknameProfile hit = cache.get(id);
+    NicknameProfile hit = cache.find(id).orElse(null);
     if (hit != null) return CompletableFuture.completedFuture(Optional.of(hit));
     return async(
         () -> {
@@ -139,7 +143,7 @@ public final class DefaultNicknameService implements NicknameService, AutoClosea
   /** placeholder의 빠른 조회를 위한 메모리 전용 접근입니다. DB I/O를 수행하지 않습니다. */
   @Override
   public Optional<NicknameProfile> cached(UUID id) {
-    return Optional.ofNullable(cache.get(id));
+    return cache.find(id);
   }
 
   /** 새 작업을 막고 최대 10초 기다린 뒤 executor와 DB 풀을 닫습니다. 인터럽트 상태를 복원합니다. */

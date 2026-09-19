@@ -358,7 +358,7 @@ CREATE TABLE IF NOT EXISTS cn_external_links (
         TicketStatus status = effectiveStatus(r);
         String target = r.getString("issued_to_uuid");
         if (status == TicketStatus.ISSUED && target != null && !target.equals(player.toString()))
-          throw new TicketRejectedException(TicketStatus.UNKNOWN, "다른 플레이어에게 발급된 변경권입니다.");
+          throw new TicketRejectedException(TicketStatus.ISSUED, "다른 플레이어에게 발급된 변경권입니다. 원래 소유자에게 돌려주세요.");
         return status;
       }
     }

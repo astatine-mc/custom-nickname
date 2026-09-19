@@ -38,6 +38,8 @@ public final class VelocityNicknamePlugin {
   private volatile DefaultNicknameService names;
   private volatile TabIntegration tab;
   private volatile boolean stopping;
+  private volatile boolean ready;
+  private final kr.seremc.nickname.protocol.PendingChanges pending = new kr.seremc.nickname.protocol.PendingChanges();
 
   /** Velocity가 주입한 프록시, 로거, 전용 설정 디렉터리를 보존합니다. */
   @Inject
@@ -53,6 +55,7 @@ public final class VelocityNicknamePlugin {
    */
   @Subscribe
   public void onInitialize(ProxyInitializeEvent event) {
+    HikariDataSource pool = null;
     try {
       VelocityConfig config = VelocityConfig.load(dataDirectory);
       String databasePassword = config.secret("database.password-env", "database.password");
@@ -66,7 +69,8 @@ public final class VelocityNicknamePlugin {
       hikari.setMaximumPoolSize(Math.max(2, config.integer("database.pool-size", 6)));
       hikari.setConnectionTimeout(3000);
       hikari.setPoolName("CustomNicknameVelocity");
-      MariaRepository repository = new MariaRepository(new HikariDataSource(hikari));
+      pool = new HikariDataSource(hikari);
+      MariaRepository repository = new MariaRepository(pool);
       repository.initialize();
       names =
           new DefaultNicknameService(
@@ -82,8 +86,12 @@ public final class VelocityNicknamePlugin {
         tab = new TabIntegration(names, logger, config.integer("tab.refresh-milliseconds", 1000));
         tab.initialize();
       }
+      ready = true;
       logger.info("CustomNickname Velocity가 시작되었습니다.");
     } catch (Exception e) {
+      ready = false;
+      if (names != null) { names.close(); names = null; }
+      else if (pool != null) pool.close();
       logger.error("CustomNickname Velocity 시작 실패", e);
       throw new IllegalStateException(e);
     }
@@ -94,7 +102,11 @@ public final class VelocityNicknamePlugin {
    */
   @Subscribe
   public EventTask onLogin(LoginEvent event) {
-    if (names == null) return null;
+    if (!ready || stopping) {
+      event.setResult(com.velocitypowered.api.event.ResultedEvent.ComponentResult.denied(
+          Component.text("닉네임 서비스를 준비하지 못했습니다. 관리자에게 문의해 주세요.")));
+      return null;
+    }
     CompletableFuture<?> future =
         names
             .synchronizeAccount(event.getPlayer().getUniqueId(), event.getPlayer().getUsername())
@@ -112,6 +124,8 @@ public final class VelocityNicknamePlugin {
   /** 서버 이동 후 현재 프로필을 새 backend에 보냅니다. Paper ready 요청도 초기 메시지 유실을 보완합니다. */
   @Subscribe
   public void onServerConnected(ServerPostConnectEvent event) {
+    pending.clear(event.getPlayer().getUniqueId());
+    if (!ready || stopping) return;
     UUID id = event.getPlayer().getUniqueId();
     names
         .findById(id)
@@ -127,6 +141,7 @@ public final class VelocityNicknamePlugin {
   public void onPluginMessage(PluginMessageEvent event) {
     if (!CHANNEL.equals(event.getIdentifier())) return;
     event.setResult(PluginMessageEvent.ForwardResult.handled());
+    if (!ready || stopping) return;
     if (!(event.getSource() instanceof ServerConnection backend)) return;
     Packet packet;
     try {
@@ -150,7 +165,10 @@ public final class VelocityNicknamePlugin {
               .findById(player.getUniqueId())
               .thenAccept(found -> found.ifPresent(p -> sendProfile(player, p)))
               .exceptionally(this::logFailure);
-      case TICKET_USE -> handleTicketUse(player, packet);
+      case TICKET_USE -> {
+        if (packet.fields().size() == 2 && pending.consume(player.getUniqueId(), packet.requestId(), packet.field(1), backend))
+          handleTicketUse(player, packet);
+      }
       case TICKET_INVENTORY_STATE -> handleInventoryState(player, packet);
       default -> logger.warn("백엔드가 보낼 수 없는 메시지 차단: {}", packet.type());
     }
@@ -169,6 +187,7 @@ public final class VelocityNicknamePlugin {
           .whenComplete(
               (profile, error) -> {
                 if (error == null) {
+                  sendProfile(player, profile);
                   send(
                       player,
                       NicknameProtocol.Type.REMOVE_TICKET_ID,
@@ -180,10 +199,10 @@ public final class VelocityNicknamePlugin {
                       packet.requestId(),
                       "SUCCESS",
                       profile.nickname());
-                  sendProfile(player, profile);
                   return;
                 }
                 Throwable cause = unwrap(error);
+                if (!(cause instanceof IllegalArgumentException)) logger.warn("닉네임 변경 실패", cause);
                 if (cause instanceof TicketRejectedException rejected && rejected.removeItem())
                   send(
                       player,
@@ -238,8 +257,19 @@ public final class VelocityNicknamePlugin {
 
   /** 프록시는 인벤토리를 볼 수 없으므로 현재 Paper 서버에 손 아이템 검사를 요청합니다. */
   void requestTicketUse(Player player, String nickname) {
-    send(player, NicknameProtocol.Type.TICKET_USE_REQUEST, UUID.randomUUID(), nickname);
+    if (!ready || stopping) throw new IllegalArgumentException("닉네임 서비스가 준비되지 않았습니다.");
+    ServerConnection connection = player.getCurrentServer().orElseThrow(() -> new IllegalArgumentException("서버 연결을 기다려 주세요."));
+    UUID request = UUID.randomUUID();
+    if (!pending.issue(player.getUniqueId(), request, nickname, connection))
+      throw new IllegalArgumentException("이전 요청 확인 중입니다. 최대 15초 후 다시 시도해 주세요.");
+    if (!connection.sendPluginMessage(CHANNEL, NicknameProtocol.encode(NicknameProtocol.Type.TICKET_USE_REQUEST, request, player.getUniqueId(), nickname))) {
+      pending.clear(player.getUniqueId());
+      throw new IllegalArgumentException("서버에 변경 요청을 전달하지 못했습니다.");
+    }
   }
+
+  /** 연결이 끝난 플레이어의 미완료 요청을 보관하지 않습니다. */
+  @Subscribe public void onDisconnect(DisconnectEvent event) { pending.clear(event.getPlayer().getUniqueId()); }
 
   /** 발급 UUID를 현재 Paper 서버로 보냅니다. 전송은 아이템 전달 완료 확인 응답을 기다리지 않습니다. */
   void deliverTicket(Player player, TicketIssue issue) {
@@ -266,6 +296,7 @@ public final class VelocityNicknamePlugin {
 
   /** TAB 값을 먼저 적용하고 계정명·닉네임·custom·revision 순서로 Paper에 전송합니다. */
   private void sendProfile(Player player, NicknameProfile p) {
+    p = names.cached(p.playerId()).orElse(p);
     if (tab != null) tab.refresh(p);
     send(
         player,
@@ -303,6 +334,9 @@ public final class VelocityNicknamePlugin {
 
   /** 현재 예외 메시지를 사용자에게 반환합니다. SQL 경로는 SqlErrorTranslator의 안전한 문구를 사용해야 합니다. */
   static String safeMessage(Throwable error) {
+    if (!(error instanceof IllegalArgumentException)
+        && !(error instanceof kr.seremc.nickname.storage.error.DatabaseException))
+      return "닉네임 요청을 처리하지 못했습니다. 관리자에게 문의해 주세요.";
     String message = error.getMessage();
     return message == null || message.isBlank() ? "닉네임 요청을 처리하지 못했습니다." : message;
   }
@@ -311,6 +345,7 @@ public final class VelocityNicknamePlugin {
   @Subscribe
   public void onShutdown(ProxyShutdownEvent event) {
     stopping = true;
+    ready = false;
     if (names != null) names.close();
   }
 }
