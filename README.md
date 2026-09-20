@@ -10,6 +10,7 @@
 | [Agents.md](Agents.md) | 수정 전 Proxy·lobby 로그 확인, 코딩·검증 규칙 |
 | [전환 계획](VELOCITY_MIGRATION_PLAN.md) | 초기 요구 사항과 목표 설계 |
 | [검토 질문](VELOCITY_MIGRATION_PLAN_QUESTIONS.md) | 변경권 복구와 화면 갱신에 관한 검토 항목 |
+| [Velocity · Paper/Purpur 설정](VELOCITY_PAPER_CONFIGURATION.md) | forwarding, backend 보호, MariaDB 및 화면 연동 설정 |
 
 파일 이름은 정확히 `DESIGN.md`, `Agents.md`입니다. 대소문자를 구분하는 환경에서 `AGENT.md`나 `agents.md`와는 다릅니다. 계획 문서의 목표와 현재 구현이 다른 부분은 아래 구현 한계를 참고하세요.
 
