@@ -11,7 +11,11 @@ import org.bukkit.Bukkit;
  * API를 함께 포함하거나 강제 의존하지 않게 합니다.
  */
 final class CustomNameplatesIntegration {
-  private static final String PLACEHOLDER = "customnickname_nickname";
+  /**
+   * CustomNameplates 3.x API는 등록·조회·해제에 모두 완전한 placeholder 표기법을 요구한다.
+   * 설정 파일에서 사용하는 표기와 같은 값을 유지하면 reload 뒤의 이전 등록 해제도 같은 키로 수행된다.
+   */
+  private static final String PLACEHOLDER = "%customnickname_nickname%";
   private final PaperNicknameBridge bridge;
   private Object subscription;
 
@@ -92,7 +96,7 @@ final class CustomNameplatesIntegration {
           .getMethod("registerPlayerPlaceholder", String.class, int.class, Function.class)
           .invoke(manager, PLACEHOLDER, refresh, value);
       Bukkit.getOnlinePlayers().forEach(player -> refresh(player.getUniqueId()));
-      bridge.getLogger().info("CustomNameplates placeholder를 등록했습니다: %" + PLACEHOLDER + "%");
+      bridge.getLogger().info("CustomNameplates placeholder를 등록했습니다: " + PLACEHOLDER);
     } catch (ReflectiveOperationException e) {
       Throwable cause =
           e instanceof InvocationTargetException invocation && invocation.getCause() != null
